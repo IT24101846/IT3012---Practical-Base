@@ -7,13 +7,7 @@ except ImportError:
 
 
 class VisualGridHuntGame:
-    """A flexible Pacman-style grid environment.
-
-    Lab 01: partial observability (wall_ahead / food_here / bumped) +
-            SimpleReflexAgent / ModelBasedAgent test bed.
-    Lab 02: adds toxic traps -- a hidden hazard the agent can sense
-            locally but never sees the location of in advance.
-    """
+   
 
     DIR_VECTORS = {'Up': (0, 1), 'Down': (0, -1), 'Left': (-1, 0), 'Right': (1, 0)}
 
@@ -54,11 +48,7 @@ class VisualGridHuntGame:
         self.steps = 0
 
     def get_percept(self) -> dict:
-        """Partial observability: the agent only senses the cell ahead
-        (wall_ahead), the cell it's standing on (food_here /
-        smells_toxin), and whether its last move actually happened
-        (bumped). It has no idea where it is on the map.
-        """
+      
         dx, dy = self.DIR_VECTORS[self.facing]
         ahead = (self.agent_pos[0] + dx, self.agent_pos[1] + dy)
         in_bounds = 0 <= ahead[0] < self.width and 0 <= ahead[1] < self.height
@@ -73,6 +63,12 @@ class VisualGridHuntGame:
             'bumped': self.last_move_blocked,
             'score': self.score,
             'remaining_food': len(self.food_positions),
+
+            # --- Step 1.1: full observability for the planning agent ---
+            'agent_pos': here,                       
+            'grid_size': (self.width, self.height),
+            'walls': list(self.walls),
+            'all_food': list(self.food_positions),
         }
 
     def execute_action(self, action: str):
