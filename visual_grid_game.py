@@ -5,6 +5,8 @@ try:
 except ImportError:
     tk = None  # GUI unavailable (e.g. headless environment) -- VisualGridHuntGame still works
 
+from agent import SearchAgent
+
 
 class VisualGridHuntGame:
    
@@ -115,6 +117,11 @@ class GridGameGUI:
         self.env = VisualGridHuntGame(width=width, height=height, num_food=num_food,
                                        num_traps=num_traps, custom_walls=walls)
 
+        # Step 1.3: drive the GUI with the planning SearchAgent (A*) instead
+        # of ModelBasedAgent / random moves.
+        self.agent = SearchAgent()
+        self.agent.active_algo = 'AStar'
+
         max_canvas_dim = 600
         self.cell_size = max(20, min(max_canvas_dim // self.env.width, max_canvas_dim // self.env.height))
 
@@ -172,7 +179,8 @@ class GridGameGUI:
 
         def step():
             if not self.env.is_done():
-                action = random.choice(['Up', 'Down', 'Left', 'Right'])
+                percept = self.env.get_percept()
+                action = self.agent.sense_and_act(percept)
                 self.env.execute_action(action)
 
                 self.draw_grid()

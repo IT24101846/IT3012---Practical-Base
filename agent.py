@@ -1,6 +1,7 @@
 # agent.py
 
 import random
+import math
 from collections import deque
 import heapq
 
@@ -83,7 +84,7 @@ class ModelBasedAgent:
 
 
 class SearchAgent:
-    """Goal-based agent: builds a full offline plan using BFS/DFS/UCS
+    """Goal-based agent: builds a full offline plan using BFS/DFS/UCS/A*
     over the exposed world model, then executes it action-by-action."""
 
     DIRECTIONS = ['Up', 'Down', 'Left', 'Right']
@@ -91,7 +92,7 @@ class SearchAgent:
 
     def __init__(self):
         self.plan = []                 # Step 1.3: queued sequence of actions
-        self.active_algo = 'BFS'       # 'BFS' | 'DFS' | 'UCS' -- swap to compare
+        self.active_algo = 'BFS'       # 'BFS' | 'DFS' | 'UCS' | 'AStar' -- swap to compare
 
     # ---------- shared helpers ----------
 
@@ -118,6 +119,24 @@ class SearchAgent:
             current = prev_pos
         actions.reverse()
         return actions
+
+    # ---------- Step 1.1: heuristic functions ----------
+
+    def manhattan_distance(self, pos, goal):
+        """h(n) = |x1 - x2| + |y1 - y2| -- the cost of moving along grid
+        axes only (no diagonals), which is exactly how this agent moves.
+        Admissible and consistent on this 4-directional grid."""
+        x1, y1 = pos
+        x2, y2 = goal
+        return abs(x1 - x2) + abs(y1 - y2)
+
+    def euclidean_distance(self, pos, goal):
+        """h(n) = sqrt((x1 - x2)^2 + (y1 - y2)^2) -- straight-line
+        distance. Still admissible here (never overestimates), but looser
+        than Manhattan since the agent can't actually move diagonally."""
+        x1, y1 = pos
+        x2, y2 = goal
+        return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
     # ---------- Step 1.2: the three uninformed search strategies ----------
 
@@ -206,6 +225,47 @@ class SearchAgent:
 
         return None
 
+    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan'):
+        """A* Search -- priority queue ordered by f(n) = g(n) + h(n), where
+        g(n) is the exact cost-so-far and h(n) is a heuristic estimate of
+        the remaining cost. Combines UCS's cost-awareness with heuristic
+        guidance towards the goal, so it typically expands far fewer nodes
+        than BFS/UCS on open maps while still finding the optimal path
+        (since both heuristics above are admissible)."""
+        start_pos, goal_pos = tuple(start_pos), tuple(goal_pos)
+        walls = set(map(tuple, walls))
+
+        if start_pos == goal_pos:
+            return []
+
+        heuristic_fn = self.manhattan_distance if heuristic_type == 'manhattan' else self.euclidean_distance
+
+        # Priority queue entries: (f_cost, g_cost, current_pos, path_taken)
+        g_start = 0
+        h_start = heuristic_fn(start_pos, goal_pos)
+        frontier = [(g_start + h_start, g_start, start_pos, [])]
+        reached_states = set()
+
+        while frontier:
+            f_cost, g_cost, current_pos, path_taken = heapq.heappop(frontier)
+
+            if current_pos == goal_pos:
+                return path_taken
+
+            if current_pos in reached_states:
+                continue  # stale entry -- a cheaper route here was already expanded
+
+            reached_states.add(current_pos)
+
+            for action, nxt in self._neighbors(current_pos, walls, grid_size):
+                if nxt not in reached_states:
+                    g_new = g_cost + 1               # uniform step cost
+                    h_new = heuristic_fn(nxt, goal_pos)
+                    f_new = g_new + h_new
+                    heapq.heappush(frontier, (f_new, g_new, nxt, path_taken + [action]))
+
+        return None  # goal unreachable
+
     # ---------- Step 1.3: offline planning + execution ----------
 
     def _closest_food(self, agent_pos, all_food):
@@ -218,10 +278,13 @@ class SearchAgent:
 
     def sense_and_act(self, percept: dict) -> str:
         if not self.plan:
+            # Step 1.3: pull the global state the planner needs straight out
+            # of the (fully-observable) percept dict.
             agent_pos = tuple(percept['agent_pos'])
+            remaining_food = percept['remaining_food']   # count, just for bookkeeping/logging
             goal_pos = self._closest_food(agent_pos, percept['all_food'])
 
-            if goal_pos is None:
+            if goal_pos is None or remaining_food == 0:
                 return random.choice(self.DIRECTIONS)  # nothing left to hunt
 
             walls = percept['walls']
@@ -233,6 +296,8 @@ class SearchAgent:
                 new_plan = self.dfs_search(agent_pos, goal_pos, walls, grid_size)
             elif self.active_algo == 'UCS':
                 new_plan = self.ucs_search(agent_pos, goal_pos, walls, grid_size)
+            elif self.active_algo == 'AStar':
+                new_plan = self.astar_search(agent_pos, goal_pos, walls, grid_size)
             else:
                 raise ValueError(f"Unknown active_algo: {self.active_algo!r}")
 
@@ -240,3 +305,15 @@ class SearchAgent:
             self.plan = new_plan if new_plan else [random.choice(self.DIRECTIONS)]
 
         return self.plan.pop(0)
+
+
+if __name__ == "__main__":
+    # ---- Step 1.1 Testing Checkpoint ----
+    # Mock start (0, 0) and goal (3, 4):
+    #   Manhattan should print 7
+    #   Euclidean should print 5.0
+    test_agent = SearchAgent()
+    start, goal = (0, 0), (3, 4)
+
+    print("Manhattan distance:", test_agent.manhattan_distance(start, goal))
+    print("Euclidean distance:", test_agent.euclidean_distance(start, goal))
