@@ -4,6 +4,7 @@ import random
 import math
 from collections import deque
 import heapq
+from logic_engine import KnowledgeBase
 
 
 class GreedyGridAgent:
@@ -93,6 +94,9 @@ class SearchAgent:
     def __init__(self):
         self.plan = []                 # Step 1.3: queued sequence of actions
         self.active_algo = 'BFS'       # 'BFS' | 'DFS' | 'UCS' | 'AStar' -- swap to compare
+        self.kb = KnowledgeBase()
+        self.kb.tell_rule(['TargetVisible', 'HasDust'], 'SafeToEngage')
+        self.kb.tell_rule(['SafeToEngage', 'BloodseekerMissing'], 'Retreat')
 
     # ---------- shared helpers ----------
 
@@ -225,7 +229,7 @@ class SearchAgent:
 
         return None
 
-    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan'):
+    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan', tile_facts=None):
         """A* Search -- priority queue ordered by f(n) = g(n) + h(n), where
         g(n) is the exact cost-so-far and h(n) is a heuristic estimate of
         the remaining cost. Combines UCS's cost-awareness with heuristic
@@ -234,6 +238,7 @@ class SearchAgent:
         (since both heuristics above are admissible)."""
         start_pos, goal_pos = tuple(start_pos), tuple(goal_pos)
         walls = set(map(tuple, walls))
+        tile_facts = tile_facts or {}
 
         if start_pos == goal_pos:
             return []
@@ -259,6 +264,15 @@ class SearchAgent:
 
             for action, nxt in self._neighbors(current_pos, walls, grid_size):
                 if nxt not in reached_states:
+                    # Evaluate this tile's safety facts before considering it.
+                    self.kb.clear_facts()
+                    for fact in tile_facts.get(nxt, []):
+                        self.kb.tell_fact(fact)
+                    self.kb.forward_chain()
+
+                    if 'Retreat' in self.kb.facts:
+                        continue
+
                     g_new = g_cost + 1               # uniform step cost
                     h_new = heuristic_fn(nxt, goal_pos)
                     f_new = g_new + h_new
@@ -289,6 +303,10 @@ class SearchAgent:
 
             walls = percept['walls']
             grid_size = percept['grid_size']
+            tile_facts = {
+                (1, 0): ['TargetVisible', 'HasDust', 'BloodseekerMissing'],
+                (0, 1): ['TargetVisible', 'HasDust'],
+            }
 
             if self.active_algo == 'BFS':
                 new_plan = self.bfs_search(agent_pos, goal_pos, walls, grid_size)
@@ -297,7 +315,9 @@ class SearchAgent:
             elif self.active_algo == 'UCS':
                 new_plan = self.ucs_search(agent_pos, goal_pos, walls, grid_size)
             elif self.active_algo == 'AStar':
-                new_plan = self.astar_search(agent_pos, goal_pos, walls, grid_size)
+                new_plan = self.astar_search(
+                    agent_pos, goal_pos, walls, grid_size, tile_facts=tile_facts
+                )
             else:
                 raise ValueError(f"Unknown active_algo: {self.active_algo!r}")
 
